@@ -6,6 +6,7 @@
 #include <ping.h>
 #include <servicescm.h>
 #include <usersession.h>
+#include <usermanagement.h>
 
 
 int main(int argc, char* argv[])
@@ -34,11 +35,18 @@ int main(int argc, char* argv[])
 
     char* pId = NULL;
 
+    char* domainName = NULL;
+    char* userName = NULL;
+    char* currentPassword = NULL;
+    char* newPassword = NULL;
+    char* userAccountComment = NULL;
+
 
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "-help") == 0)
         {
+            
             std::cout << "Usage Guide:" << std::endl;
             std::cout << "Win32Util [command] [options]" << std::endl;
             std::cout << "Note : Argument containing spaces must be quoted." << std::endl;
@@ -51,8 +59,9 @@ int main(int argc, char* argv[])
             std::cout << "4. service      : Provides managing window services through Service Control Manager (SCM)." << std::endl;
             std::cout << "5. netact       : Provides network activity details of the system with Process information." << std::endl;
             std::cout << "6. usrsesn      : Provides functionality to get system current user session information and start process with specific user session." << std::endl;
-            std::cout << "7. -help        : Provides usage guide." << std::endl;
-            std::cout << "8. -version     : Displays application version information." << std::endl;
+            std::cout << "7. usrmgmt      : Provides functionality to get details and manage the users of the system." << std::endl;
+            std::cout << "8. -help        : Provides usage guide." << std::endl;
+            std::cout << "9. -version     : Displays application version information." << std::endl;
             std::cout << std::endl;
 
             std::cout << "Command Options - " << std::endl;
@@ -105,11 +114,29 @@ int main(int argc, char* argv[])
             std::cout << "    usersession.process.bring.foreground  pid=xxxx" << std::endl;
             std::cout << std::endl;
 
+            std::cout << "7. usrmgmt command options" << std::endl;
+            std::cout << "   [Argument containing spaces must be quoted]" << std::endl;
+            std::cout << "      -> key:domainname - If you provide empty domainname it will find user in Local Computer" << std::endl;
+            std::cout << "      -> key:format     - It is optional" << std::endl;
+            std::cout << "    domain.info  format=vertical/horizontal" << std::endl;
+            std::cout << "    user.info  domainname=xxxx  username=xxxx  format=vertical/horizontal" << std::endl;
+            std::cout << "    users.info.all  domainname=xxxx  format=vertical/horizontal" << std::endl;
+            std::cout << "    user.login.verify domainname=xxxx  username=xxxx  password=xxxx" << std::endl;
+            std::cout << "    user.local.create.account  username=xxxx  password=xxxx  comment=xxxx xxx xxx" << std::endl;
+            std::cout << "    user.account.add.to.admin  username=xxxx" << std::endl;
+            std::cout << "    user.account.remove.from.admin  username=xxxx" << std::endl;
+            std::cout << "    user.account.add.to.standard.user  username=xxxx" << std::endl;
+            std::cout << "    user.account.unlock  domainname=xxxx  username=xxxx" << std::endl;
+            std::cout << "    user.local.delete.account  username=xxxx" << std::endl;
+            std::cout << "    user.set.password  username=xxxx  newpassword=xxxx" << std::endl;
+            std::cout << "    user.change.password  username=xxxx  oldpassword=xxxx  newpassword=xxxx" << std::endl;
+            std::cout << std::endl;
+            
             return 0;
         } 
         else if (strcmp(argv[i], "-version") == 0)
         {
-            std::cout << "Version - 1.4.0, Published - 16 Jun 2026" << std::endl;
+            std::cout << "Version - 1.5.0, Published - 10 Jul 2026" << std::endl;
             return 0;
         }
         else if (strcmp(argv[i], "wmi") == 0 || 
@@ -117,10 +144,13 @@ int main(int argc, char* argv[])
                  strcmp(argv[i], "ping") == 0 || 
                  strcmp(argv[i], "service") == 0 ||
                  strcmp(argv[i], "netact") == 0 ||
-                 strcmp(argv[i], "usrsesn") == 0)
+                 strcmp(argv[i], "usrsesn") == 0 ||
+                 strcmp(argv[i], "usrmgmt") == 0)
         {
             command = argv[i];
         }
+
+        //Command - wmi
         else if (strcmp(argv[i], "cpu") == 0 || 
             strcmp(argv[i], "logical.disk") == 0 || 
             strcmp(argv[i], "disk.drive") == 0 || 
@@ -136,6 +166,8 @@ int main(int argc, char* argv[])
         {
             option = argv[i];
         }
+
+        //Command - telnet, ping
         else if (strncmp(argv[i], "ip=", 3) == 0)
         {    
             option = argv[i];
@@ -146,10 +178,8 @@ int main(int argc, char* argv[])
             option = argv[i];
             port = argv[i] + 5;
         }
-        else if (strncmp(argv[i], "serv=", 5) == 0)
-        {
-            option = argv[i];
-        }
+
+        //Command - service
         else if (strcmp(argv[i], "service.query.all") == 0 || 
                  strcmp(argv[i], "service.query") == 0 || 
                  strcmp(argv[i], "service.install") == 0 || 
@@ -193,25 +223,20 @@ int main(int argc, char* argv[])
         {
             serviceStartType = argv[i] + 5;
         }
+
+        //Command - netact
         else if (strcmp(argv[i], "tcp") == 0)
         {
             option = argv[i];
         }
-        else if (strcmp(argv[i], "usersession.query.info") == 0)
+
+        //Command - usrsesn
+        else if (strcmp(argv[i], "usersession.query.info") == 0 ||
+            strcmp(argv[i], "usersession.active.program.launch") == 0 ||
+            strcmp(argv[i], "usersession.enumeratewindows") == 0 ||
+            strcmp(argv[i], "usersession.process.bring.foreground") == 0)
         {
-            option = argv[i];
-        }
-        else if (strcmp(argv[i], "usersession.active.program.launch") == 0)
-        {
-            option = argv[i];
-        }
-        else if (strcmp(argv[i], "usersession.enumeratewindows") == 0)
-        {
-            option = argv[i];
-        }
-        else if (strcmp(argv[i], "usersession.process.bring.foreground") == 0)
-        {
-            option = argv[i];
+             option = argv[i];
         }
         else if (strncmp(argv[i], "programpath=", 12) == 0)
         {
@@ -228,6 +253,47 @@ int main(int argc, char* argv[])
         else if (strncmp(argv[i], "pid=", 4) == 0)
         {
             pId = argv[i] + 4;
+        }
+
+        //Command - usrmgmt
+        else if (strcmp(argv[i], "domain.info") == 0 || 
+            strcmp(argv[i], "user.info") == 0 || 
+            strcmp(argv[i], "users.info.all") == 0 || 
+            strcmp(argv[i], "user.login.verify") == 0 ||
+            strcmp(argv[i], "user.local.create.account") == 0 || 
+            strcmp(argv[i], "user.account.add.to.admin") == 0 || 
+            strcmp(argv[i], "user.account.remove.from.admin") == 0 ||
+            strcmp(argv[i], "user.account.add.to.standard.user") == 0 ||
+            strcmp(argv[i], "user.account.unlock") == 0 ||
+            strcmp(argv[i], "user.local.delete.account") == 0 ||
+            strcmp(argv[i], "user.set.password") == 0 ||
+            strcmp(argv[i], "user.change.password") == 0)
+        {
+            option = argv[i];
+        }
+        else if (strncmp(argv[i], "domainname=", 11) == 0)
+        {
+            domainName = argv[i] + 11;
+        }
+        else if (strncmp(argv[i], "username=", 9) == 0)
+        {
+            userName = argv[i] + 9;
+        }
+        else if (strncmp(argv[i], "password=", 9) == 0)
+        {
+            currentPassword = argv[i] + 9;
+        }
+        else if (strncmp(argv[i], "oldpassword=", 12) == 0)
+        {
+            currentPassword = argv[i] + 12;
+        }
+        else if (strncmp(argv[i], "newpassword=", 12) == 0)
+        {
+            newPassword = argv[i] + 12;
+        }
+        else if (strncmp(argv[i], "comment=", 8) == 0)
+        {
+            userAccountComment = argv[i] + 8;
         }
 
         //std::cout << "argv[" << i << "] = " << argv[i] << std::endl;
@@ -247,6 +313,7 @@ int main(int argc, char* argv[])
     //std::cout << "Option - " << option << std::endl;
 
 
+    //Command - wmi
     if (strcmp(command, "wmi") == 0) {
         WMIQuery wmi;
 
@@ -266,6 +333,8 @@ int main(int argc, char* argv[])
         std::string wmiQuery = wmi.getWMIQueryFromOption(option, queryKey, queryValue);
         wmi.printWMIQueryResults(wmiQuery, queryFormat);
     } 
+
+    //Command - telnet
     else if (strcmp(command, "telnet") == 0) {
         if (ipAddress == NULL || port == NULL) {
             std::cout << "Error : ip and port parameter is required for telnet command." << std::endl;
@@ -275,6 +344,8 @@ int main(int argc, char* argv[])
         Telnet telnet;
         telnet.checkIPAndPortConnectivity(ipAddress, port);
     }
+
+    //Command - ping
     else if (strcmp(command, "ping") == 0) {
         if (ipAddress == NULL) {
             std::cout << "Error : ip parameter is required for ping command." << std::endl;
@@ -284,6 +355,8 @@ int main(int argc, char* argv[])
         Ping ping;
         ping.checkIPConnectivity(ipAddress);
     }
+
+    //Command - service
     else if (strcmp(command, "service") == 0) {
         ServicesSCM servicesSCM;
         if (strcmp(option, "service.query.all") == 0) {
@@ -352,6 +425,8 @@ int main(int argc, char* argv[])
             servicesSCM.printServiceDescription(serviceName);
         }
     }
+
+    //Command - netact
     else if (strcmp(command, "netact") == 0) {
         if (queryKey == NULL) {
             std::cout << "Error : key parameter is required for tcpnetact '" << option << "' command." << std::endl;
@@ -369,6 +444,8 @@ int main(int argc, char* argv[])
         NetworkActivity networkActivity;
         networkActivity.printTCPNetworkActivity(queryKey, queryValue, queryFormat);
     }
+
+    //Command - usrsesn
     else if (strcmp(command, "usrsesn") == 0) {
         UserSession userSession;
         if (strcmp(option, "usersession.query.info") == 0) {
@@ -426,6 +503,135 @@ int main(int argc, char* argv[])
         }
     }
 
+    //Command - usrmgmt
+    else if (strcmp(command, "usrmgmt") == 0) {
+        UserManagement userManagement;
+        if (strcmp(option, "domain.info") == 0) {
+            if (queryFormat == NULL) {
+                std::cout << "Error : format parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.printDomainInfo(queryFormat);
+        }
+        else if (strcmp(option, "user.info") == 0) {
+            if (domainName == NULL) {
+                std::cout << "Error : domainname parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.getUserInfo(domainName, userName, queryFormat); //queryFormat is optional
+        }
+        else if (strcmp(option, "users.info.all") == 0) {
+            if (domainName == NULL) {
+                std::cout << "Error : domainname parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (queryFormat == NULL) {
+                std::cout << "Error : format parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.getAllUsersInfo(domainName, queryFormat);
+        }
+        else if (strcmp(option, "user.login.verify") == 0) {
+            if (domainName == NULL) {
+                std::cout << "Error : domainname parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (currentPassword == NULL) {
+                std::cout << "Error : password parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.verifyUserLogin(domainName, userName, currentPassword);
+        }
+        else if (strcmp(option, "user.local.create.account") == 0) {
+            if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (currentPassword == NULL) {
+                std::cout << "Error : password parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (userAccountComment == NULL) {
+                std::cout << "Error : comment parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.createLocalUser(userName, currentPassword, userAccountComment);
+        }
+        else if (strcmp(option, "user.account.add.to.admin") == 0) {
+            if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.addUserToAdministratorGroup(userName);
+        }
+        else if (strcmp(option, "user.account.remove.from.admin") == 0) {
+            if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.removeUserFromAdministratorGroup(userName);
+        }
+        else if (strcmp(option, "user.account.add.to.standard.user") == 0) {
+            if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.addUserToStandardNormalUserGroup(userName);
+        }
+        else if (strcmp(option, "user.account.unlock") == 0) {
+            if (domainName == NULL) {
+                std::cout << "Error : domainname parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.unlockUserAcount(domainName, userName);
+        }
+        else if (strcmp(option, "user.local.delete.account") == 0) {
+            if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.deleteLocalUser(userName);
+        }
+        else if (strcmp(option, "user.set.password") == 0) {
+            if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (newPassword == NULL) {
+                std::cout << "Error : newpassword parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.setUserPassword(userName, newPassword);
+        }
+        else if (strcmp(option, "user.change.password") == 0) {
+            if (userName == NULL) {
+                std::cout << "Error : username parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (currentPassword == NULL) {
+                std::cout << "Error : oldpassword parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            else if (newPassword == NULL) {
+                std::cout << "Error : newpassword parameter is required for usrmgmt '" << option << "' command." << std::endl;
+                return 1;
+            }
+            userManagement.changeUserPassword(userName, currentPassword, newPassword);
+        }
+
+    }
 
 
     return 0;

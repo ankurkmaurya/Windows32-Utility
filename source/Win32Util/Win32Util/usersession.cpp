@@ -4,7 +4,7 @@
 
 
 
-const wchar_t* sessionStateToString(WTS_CONNECTSTATE_CLASS state)
+static const wchar_t* sessionStateToString(WTS_CONNECTSTATE_CLASS state)
 {
     switch (state)
     {
@@ -21,6 +21,192 @@ const wchar_t* sessionStateToString(WTS_CONNECTSTATE_CLASS state)
     default:              return L"Unknown";
     }
 }
+
+
+static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
+{
+    EnumerateWindowContext* enumerateContext = (EnumerateWindowContext*)lParam;
+
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == 0) {
+        return TRUE;
+    }
+
+    //Filter based on pid key
+    if (strcmp(enumerateContext->key, "pid") == 0) {
+        DWORD targetPid = static_cast<DWORD>(strtoul(enumerateContext->value, NULL, 10));
+        if (pid != targetPid) {
+            return TRUE;
+        }
+    }
+
+
+    HANDLE hProcess = OpenProcess(
+        PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+        FALSE,
+        pid);
+
+    if (!hProcess)
+        return TRUE;
+
+
+    wchar_t title[512];
+    GetWindowTextW(hwnd, title, 512);
+    std::string titleUTF8 = AppUtil::WCharToUtf8(title);
+
+    bool visible = IsWindowVisible(hwnd);
+    bool minimized = IsIconic(hwnd);
+
+    HWND fg = GetForegroundWindow();
+
+    std::string windowState;
+    const char* winState;
+    if (GetAncestor(fg, GA_ROOT) == GetAncestor(hwnd, GA_ROOT)) {
+        windowState = "FOREGROUND";
+        winState = "foreground";
+    }
+    else if (minimized) {
+        windowState = "MINIMIZED";
+        winState = "minimized";
+    }
+    else if (visible) {
+        windowState = "VISIBLE";
+        winState = "visible";
+    }
+    else {
+        windowState = "HIDDEN";
+        winState = "hidden";
+    }
+
+    //Filter based on windowstate key
+    if (strcmp(enumerateContext->key, "windowstate") == 0) {
+        if (strcmp(enumerateContext->value, winState) != 0) {
+            CloseHandle(hProcess);
+            return TRUE;
+        }
+    }
+
+    DWORD sessionId = 0;
+    ProcessIdToSessionId(pid, &sessionId);
+    //Filter based on sessionid key
+    if (strcmp(enumerateContext->key, "sessionid") == 0) {
+        DWORD targetSessionId = static_cast<DWORD>(strtoul(enumerateContext->value, NULL, 10));
+        if (sessionId != targetSessionId)
+        {
+            CloseHandle(hProcess);
+            return TRUE;
+        }
+    }
+
+    std::cout << std::endl;
+    if (strcmp(enumerateContext->format, "vertical") == 0) {
+        if (enumerateContext->printHeader)
+        {
+            // Print Header
+            std::cout << "PID~~";
+            std::cout << "SessionId~~";
+            std::cout << "User~~";
+            std::cout << "Window State~~";
+            std::cout << "Title~~";
+            std::cout << "Path~~";
+            std::cout << "Command Line~~";
+            std::cout << "Handle";
+            std::cout << std::endl;
+
+            enumerateContext->printHeader = FALSE;
+        }
+
+        // Print Body
+        std::cout
+            << pid << "~~"
+            << sessionId << "~~"
+            << AppUtil::wideStrToUTF8(AppUtil::getProcessUser(hProcess)) << "~~"
+            << windowState << "~~"
+            << titleUTF8 << "~~"
+            << AppUtil::wideStrToUTF8(AppUtil::getProcessPath(hProcess)) << "~~"
+            << AppUtil::wideStrToUTF8(AppUtil::getProcessCommandLine(hProcess)) << "~~"
+            << hwnd
+            << "\n";
+
+    }
+    else if (strcmp(enumerateContext->format, "horizontal") == 0) {
+        std::cout
+            << "PID: " << pid
+            << "\nSessionId: " << sessionId
+            << "\nUser: " << AppUtil::wideStrToUTF8(AppUtil::getProcessUser(hProcess))
+            << "\nWindow State: " << windowState
+            << "\nTitle: " << titleUTF8
+            << "\nPath: " << AppUtil::wideStrToUTF8(AppUtil::getProcessPath(hProcess))
+            << "\nCommand Line: " << AppUtil::wideStrToUTF8(AppUtil::getProcessCommandLine(hProcess))
+            << "\nHandle: " << hwnd
+            << "\n\n";
+    }
+
+
+    CloseHandle(hProcess);
+    return TRUE;
+}
+
+
+
+static BOOL CALLBACK FindProcessWindowProc(HWND hwnd, LPARAM lParam)
+{
+    BringWindowContext* ctx = (BringWindowContext*)lParam;
+
+    if (!IsWindow(hwnd))
+    {
+        return TRUE;
+    }
+
+    if (GetWindowTextLengthW(hwnd) == 0)
+    {
+        return TRUE;
+    }
+
+    DWORD windowPid = 0;
+    GetWindowThreadProcessId(hwnd, &windowPid);
+
+    if (windowPid != ctx->pid)
+    {
+        return TRUE;
+    }
+
+    // Ignore invisible windows
+    if (!IsWindowVisible(hwnd))
+    {
+        return TRUE;
+    }
+
+    // Ignore owned/helper windows
+    if (GetWindow(hwnd, GW_OWNER) != NULL)
+    {
+        return TRUE;
+    }
+
+    // Ignore tool windows
+    LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    if (exStyle & WS_EX_TOOLWINDOW)
+    {
+        return TRUE;
+    }
+
+
+    wchar_t title[512] = { 0 };
+    GetWindowTextW(hwnd, title, 512);
+    // Ignore untitled windows
+    if (wcslen(title) == 0)
+    {
+        return TRUE;
+    }
+
+    ctx->hwnd = hwnd;
+
+    // Stop enumeration
+    return FALSE;
+}
+
+
 
 void UserSession::printUserSessionDetails(char* format) {
     PWTS_SESSION_INFO pSessions = NULL;
@@ -161,6 +347,7 @@ void UserSession::printUserSessionDetails(char* format) {
 }
 
 
+
 WindowMode UserSession::parseWindowMode(const char* value)
 {
     if (!value)
@@ -178,6 +365,8 @@ WindowMode UserSession::parseWindowMode(const char* value)
 
     return WindowMode::Normal;
 }
+
+
 
 BOOL UserSession::launchProgramInActiveUserSession(char* programFilePath, char* programCommandLineArguments, WindowMode winMode)
 {
@@ -327,377 +516,9 @@ BOOL UserSession::launchProgramInActiveUserSession(char* programFilePath, char* 
 
 
 
-
-static std::wstring GetProcessPath(HANDLE hProcess)
-{
-    wchar_t path[MAX_PATH];
-    DWORD size = MAX_PATH;
-
-    if (QueryFullProcessImageNameW(
-        hProcess,
-        0,
-        path,
-        &size))
-    {
-        return path;
-    }
-
-    return L"";
-}
-
-
-static std::wstring GetProcessCommandLine(HANDLE hProcess)
-{
-    std::wstring result;
-
-    if (!hProcess)
-        return result;
-
-    HMODULE hNtDll =
-        GetModuleHandleW(L"ntdll.dll");
-
-    if (!hNtDll)
-        return result;
-
-    auto NtQueryInformationProcess =
-        (_NtQueryInformationProcess)
-        GetProcAddress(
-            hNtDll,
-            "NtQueryInformationProcess");
-
-    if (!NtQueryInformationProcess)
-        return result;
-
-    PROCESS_BASIC_INFORMATION_T pbi = { 0 };
-
-    ULONG retLen = 0;
-
-    NTSTATUS status =
-        NtQueryInformationProcess(
-            hProcess,
-            ProcessBasicInformation,
-            &pbi,
-            sizeof(pbi),
-            &retLen);
-
-    if (status != 0)
-        return result;
-
-    PEB_T peb = { 0 };
-
-    SIZE_T bytesRead = 0;
-
-    if (!ReadProcessMemory(
-        hProcess,
-        pbi.PebBaseAddress,
-        &peb,
-        sizeof(peb),
-        &bytesRead))
-    {
-        return result;
-    }
-
-    RTL_USER_PROCESS_PARAMETERS_T procParams = { 0 };
-
-    if (!ReadProcessMemory(
-        hProcess,
-        peb.ProcessParameters,
-        &procParams,
-        sizeof(procParams),
-        &bytesRead))
-    {
-        return result;
-    }
-
-    USHORT byteLen =
-        procParams.CommandLine.Length;
-
-    if (byteLen == 0)
-        return result;
-
-    // Safety limit
-    if (byteLen > 32766)
-        return result;
-
-    SIZE_T wcharLen =
-        byteLen / sizeof(wchar_t);
-
-    if (wcharLen == 0)
-        return result;
-
-    std::vector<wchar_t> buffer(
-        wcharLen + 1,
-        L'\0');
-
-    if (!ReadProcessMemory(
-        hProcess,
-        procParams.CommandLine.Buffer,
-        buffer.data(),
-        byteLen,
-        &bytesRead))
-    {
-        return result;
-    }
-
-    buffer[wcharLen] = L'\0';
-
-    result.assign(buffer.data());
-
-    return result;
-}
-
-
-static std::wstring GetProcessUser(HANDLE hProcess)
-{
-    HANDLE hToken = NULL;
-
-    if (!OpenProcessToken(
-        hProcess,
-        TOKEN_QUERY,
-        &hToken))
-    {
-        return L"";
-    }
-
-    DWORD len = 0;
-
-    GetTokenInformation(
-        hToken,
-        TokenUser,
-        NULL,
-        0,
-        &len);
-
-    BYTE* buffer = new BYTE[len];
-
-    if (!GetTokenInformation(
-        hToken,
-        TokenUser,
-        buffer,
-        len,
-        &len))
-    {
-        delete[] buffer;
-        CloseHandle(hToken);
-        return L"";
-    }
-
-    TOKEN_USER* tu = (TOKEN_USER*)buffer;
-
-    wchar_t name[256];
-    wchar_t domain[256];
-
-    DWORD nameLen = 256;
-    DWORD domainLen = 256;
-
-    SID_NAME_USE sidType;
-
-    LookupAccountSidW(
-        NULL,
-        tu->User.Sid,
-        name,
-        &nameLen,
-        domain,
-        &domainLen,
-        &sidType);
-
-    std::wstring result = std::wstring(domain) + L"\\" + name;
-
-    delete[] buffer;
-
-    CloseHandle(hToken);
-
-    return result;
-}
-
-
-static BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
-{
-    EnumerateWindowContext* enumerateContext = (EnumerateWindowContext*)lParam;
-
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    if (pid == 0) {
-        return TRUE;
-    }
-       
-    //Filter based on pid key
-    if (strcmp(enumerateContext->key, "pid") == 0) {
-        DWORD targetPid = static_cast<DWORD>(strtoul(enumerateContext->value, NULL, 10));
-        if (pid != targetPid) {
-            return TRUE;
-        }
-    }
-  
-
-    HANDLE hProcess = OpenProcess(
-            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-            FALSE,
-            pid);
-
-    if (!hProcess)
-        return TRUE;
-
-
-    wchar_t title[512];
-    GetWindowTextW(hwnd, title, 512);
-    std::string titleUTF8 = AppUtil::WCharToUtf8(title);
-
-    bool visible = IsWindowVisible(hwnd);
-    bool minimized = IsIconic(hwnd);
-
-    HWND fg = GetForegroundWindow();
-
-    std::string windowState;
-    const char* winState;
-    if (GetAncestor(fg, GA_ROOT) == GetAncestor(hwnd, GA_ROOT)) {
-        windowState = "FOREGROUND";
-        winState = "foreground";
-    }
-    else if (minimized) {
-        windowState = "MINIMIZED";
-        winState = "minimized";
-    }
-    else if (visible) {
-        windowState = "VISIBLE";
-        winState = "visible";
-    }
-    else {
-        windowState = "HIDDEN";
-        winState = "hidden";
-    }
-        
-    //Filter based on windowstate key
-    if (strcmp(enumerateContext->key, "windowstate") == 0) {
-        if (strcmp(enumerateContext->value, winState) != 0) {
-            CloseHandle(hProcess);
-            return TRUE;
-        }
-    }
-
-    DWORD sessionId = 0;
-    ProcessIdToSessionId(pid, &sessionId);
-    //Filter based on sessionid key
-    if (strcmp(enumerateContext->key, "sessionid") == 0) {
-        DWORD targetSessionId = static_cast<DWORD>(strtoul(enumerateContext->value, NULL, 10));
-        if (sessionId != targetSessionId)
-        {
-            CloseHandle(hProcess);
-            return TRUE;
-        }
-    }
-
-    std::cout << std::endl;
-    if (strcmp(enumerateContext->format, "vertical") == 0) {
-        if (enumerateContext->printHeader)
-        {
-            // Print Header
-            std::cout << "PID~~";
-            std::cout << "SessionId~~";
-            std::cout << "User~~";
-            std::cout << "Window State~~";
-            std::cout << "Title~~";
-            std::cout << "Path~~";
-            std::cout << "Command Line~~";
-            std::cout << "Handle";
-            std::cout << std::endl;
-
-            enumerateContext->printHeader = FALSE;
-        }
-
-        // Print Body
-        std::cout
-            << pid << "~~"
-            << sessionId << "~~"
-            << AppUtil::wideStrToUTF8(GetProcessUser(hProcess)) << "~~"
-            << windowState << "~~"
-            << titleUTF8 << "~~"
-            << AppUtil::wideStrToUTF8(GetProcessPath(hProcess)) << "~~"
-            << AppUtil::wideStrToUTF8(GetProcessCommandLine(hProcess)) << "~~"
-            << hwnd
-            << "\n";
-
-    }
-    else if (strcmp(enumerateContext->format, "horizontal") == 0) {
-        std::cout
-            << "PID: " << pid
-            << "\nSessionId: " << sessionId
-            << "\nUser: " << AppUtil::wideStrToUTF8(GetProcessUser(hProcess))
-            << "\nWindow State: " << windowState
-            << "\nTitle: " << titleUTF8
-            << "\nPath: " << AppUtil::wideStrToUTF8(GetProcessPath(hProcess))
-            << "\nCommand Line: " << AppUtil::wideStrToUTF8(GetProcessCommandLine(hProcess))
-            << "\nHandle: " << hwnd
-            << "\n\n";
-    }
-
-
-    CloseHandle(hProcess);
-    return TRUE;
-}
-
-
 void UserSession::enumerateWindows(EnumerateWindowContext context)
 {
     EnumWindows(EnumWindowsProc, (LPARAM)&context);
-}
-
-
-
-static BOOL CALLBACK FindProcessWindowProc(HWND hwnd, LPARAM lParam)
-{
-    BringWindowContext* ctx = (BringWindowContext*)lParam;
-
-    if (!IsWindow(hwnd))
-    {
-        return TRUE;
-    }
-
-    if (GetWindowTextLengthW(hwnd) == 0)
-    {
-        return TRUE;
-    }
-
-    DWORD windowPid = 0;
-    GetWindowThreadProcessId(hwnd, &windowPid);
-
-    if (windowPid != ctx->pid)
-    {
-        return TRUE;
-    }
-
-    // Ignore invisible windows
-    if (!IsWindowVisible(hwnd))
-    {
-        return TRUE;
-    }
-
-    // Ignore owned/helper windows
-    if (GetWindow(hwnd, GW_OWNER) != NULL)
-    {
-        return TRUE;
-    }
-
-    // Ignore tool windows
-    LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-    if (exStyle & WS_EX_TOOLWINDOW)
-    {
-        return TRUE;
-    }
-
-
-    wchar_t title[512] = { 0 };
-    GetWindowTextW(hwnd,title,512);
-    // Ignore untitled windows
-    if (wcslen(title) == 0)
-    {
-        return TRUE;
-    }
-
-    ctx->hwnd = hwnd;
-
-    // Stop enumeration
-    return FALSE;
 }
 
 
@@ -754,6 +575,7 @@ BOOL UserSession::bringProcessToForeground(const char* pidValue)
 
     return TRUE;
 }
+
 
 
 
